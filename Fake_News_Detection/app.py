@@ -4,10 +4,11 @@ import pickle
 import streamlit as st
 
 from preprocess import preprocess_text
+from fact_verifier import verify_fact
 
 # Streamlit Page Setup
 st.set_page_config(
-    page_title="Fake News Detection - College Project",
+    page_title="Fake News Detection & Fact Verification",
     page_icon="📰",
     layout="wide"
 )
@@ -32,23 +33,55 @@ st.markdown("""
         background-color: #D1FAE5;
         border: 2px solid #10B981;
         border-radius: 12px;
-        padding: 20px;
+        padding: 18px;
         color: #065F46;
         text-align: center;
-        font-size: 1.4rem;
+        font-size: 1.35rem;
         font-weight: bold;
         margin-top: 15px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.04);
     }
     .card-fake {
         background-color: #FEE2E2;
         border: 2px solid #EF4444;
         border-radius: 12px;
-        padding: 20px;
+        padding: 18px;
         color: #991B1B;
         text-align: center;
-        font-size: 1.4rem;
+        font-size: 1.35rem;
         font-weight: bold;
         margin-top: 15px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+    }
+    .fact-card {
+        border-radius: 10px;
+        padding: 16px;
+        margin-top: 15px;
+        margin-bottom: 15px;
+    }
+    .fact-supported {
+        background-color: #ECFDF5;
+        border-left: 5px solid #10B981;
+        color: #064E3B;
+    }
+    .fact-contradicted {
+        background-color: #FEF2F2;
+        border-left: 5px solid #EF4444;
+        color: #7F1D1D;
+    }
+    .fact-unverified {
+        background-color: #F3F4F6;
+        border-left: 5px solid #6B7280;
+        color: #374151;
+    }
+    .badge-label {
+        display: inline-block;
+        padding: 4px 10px;
+        border-radius: 6px;
+        font-weight: 700;
+        font-size: 0.9rem;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -80,8 +113,8 @@ model, vectorizer = load_assets()
 # Sidebar
 with st.sidebar:
     st.title("📰 Project Info")
-    st.markdown("**Fake News Detection System**")
-    st.write("A Machine Learning & NLP Based Classifier for College Project.")
+    st.markdown("**Fake News Detection & Fact Verification System**")
+    st.write("Hybrid Machine Learning (TF-IDF + Logistic Regression) & Knowledge-Based Fact Verification.")
     st.divider()
     
     st.subheader("📊 Model Performance")
@@ -99,32 +132,31 @@ with st.sidebar:
         st.info("Metrics: ~95.5% Accuracy")
         
     st.divider()
-    st.subheader("🛠️ Tech Stack")
-    st.write("- **Python 3**")
-    st.write("- **Scikit-learn** (Logistic Regression)")
-    st.write("- **NLTK** (Porter Stemmer & Stopwords)")
-    st.write("- **TF-IDF** (N-grams Feature Extraction)")
-    st.write("- **Streamlit** (Web Interface)")
+    st.subheader("🛠️ Architecture")
+    st.write("1. **Statistical NLP:** TF-IDF (Unigram + Bigram, 50k features)")
+    st.write("2. **Classifier:** Logistic Regression (Scikit-learn)")
+    st.write("3. **Fact Verifier:** Trusted Reference Database (Govt. records, PIB Fact Checks, Encyclopedic data)")
+    st.write("4. **3-State Verification:** Supported, Contradicted, Not Verified")
 
 # Main Header
-st.markdown('<div class="title-text">📰 FAKE NEWS DETECTION SYSTEM</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-text">Machine Learning Based System - Works on both SHORT & LONG News</div>', unsafe_allow_html=True)
+st.markdown('<div class="title-text">📰 FAKE NEWS DETECTION & FACT VERIFICATION</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-text">Hybrid System: Statistical Machine Learning + Trusted Reference Fact Checking</div>', unsafe_allow_html=True)
 
 # Session State for Input
 if 'news_text' not in st.session_state:
     st.session_state['news_text'] = ""
 
-st.subheader("⚡ Quick One-Click Samples (For College Viva Demo)")
+st.subheader("⚡ Quick One-Click Samples (Viva Voce Testing)")
 c1, c2, c3, c4 = st.columns(4)
 
 with c1:
-    if st.button("🇮🇳 Sample 1 (Real Short)", use_container_width=True):
+    if st.button("🇮🇳 Sample 1 (Real Fact)", use_container_width=True):
         st.session_state['news_text'] = "Narendra modi pm h india ke"
         st.rerun()
 
 with c2:
-    if st.button("🚀 Sample 2 (Real Short)", use_container_width=True):
-        st.session_state['news_text'] = "ISRO launched a new satellite into orbit successfully"
+    if st.button("⚠️ Sample 2 (False Entity Test)", use_container_width=True):
+        st.session_state['news_text'] = "Tushar is PM of India"
         st.rerun()
 
 with c3:
@@ -133,21 +165,21 @@ with c3:
         st.rerun()
 
 with c4:
-    if st.button("👽 Sample 4 (Fake Viral)", use_container_width=True):
-        st.session_state['news_text'] = "Aliens landed in Mumbai and captured the Gateway of India"
+    if st.button("🚀 Sample 4 (Real Space)", use_container_width=True):
+        st.session_state['news_text'] = "ISRO launched a new satellite into orbit successfully"
         st.rerun()
 
 # Text Area
 user_news = st.text_area(
-    "Enter News Headline or Article (Hindi / English / Short / Long):",
+    "Enter News Headline or Statement to Verify:",
     value=st.session_state.get('news_text', ''),
-    height=140,
-    placeholder="Type or paste any news here..."
+    height=130,
+    placeholder="Type or paste any news statement here..."
 )
 
 col_b1, col_b2 = st.columns([1, 4])
 with col_b1:
-    predict_clicked = st.button("🔍 Predict Authenticity", type="primary", use_container_width=True)
+    predict_clicked = st.button("🔍 Analyze & Verify", type="primary", use_container_width=True)
 
 if predict_clicked:
     if not user_news.strip():
@@ -155,44 +187,113 @@ if predict_clicked:
     elif model is None or vectorizer is None:
         st.error("❌ Model ya Vectorizer load nahi hua! Please check model.pkl and vectorizer.pkl.")
     else:
-        with st.spinner("Analyzing text with NLTK and Logistic Regression..."):
+        with st.spinner("Running Statistical NLP Model & Cross-Referencing Trusted Reference Facts..."):
             # Step 1: Preprocess text using NLTK
             cleaned = preprocess_text(user_news)
             
             # Step 2: TF-IDF Feature Extraction
             vectorized = vectorizer.transform([cleaned])
             
-            # Step 3: ML Model Prediction
-            # 1 = REAL, 0 = FAKE
-            prediction = model.predict(vectorized)[0]
+            # Step 3: ML Model Prediction (1 = REAL, 0 = FAKE)
+            ml_pred = model.predict(vectorized)[0]
             proba = model.predict_proba(vectorized)[0]
-            
             confidence_real = proba[1] * 100
             confidence_fake = proba[0] * 100
             
+            # Step 4: Fact Verification against Trusted Reference Data
+            fact_result = verify_fact(user_news)
+            
             st.divider()
             
-            # Step 4: Display Result
-            if prediction == 1:
-                st.markdown(f"""
-                <div class="card-real">
-                    ✅ PREDICTION: REAL NEWS
-                    <div style="font-size: 1.05rem; font-weight: normal; margin-top: 8px;">
-                        <strong>Confidence Score:</strong> {confidence_real:.2f}% probability of being Authentic/Real News
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                st.markdown(f"""
+            # Step 5: Synthesize Final Verdict
+            # If Fact Verifier finds direct contradiction (e.g. false entity claiming PM of India):
+            # It flags it as FAKE and overrides statistical false positives!
+            if fact_result["status"] == "CONTRADICTED":
+                final_verdict = "FAKE"
+                card_html = f"""
                 <div class="card-fake">
-                    ❌ PREDICTION: FAKE NEWS
+                    ❌ PREDICTION: FAKE NEWS (Factual Contradiction Detected)
                     <div style="font-size: 1.05rem; font-weight: normal; margin-top: 8px;">
-                        <strong>Confidence Score:</strong> {confidence_fake:.2f}% probability of being Misleading/Fake News
+                        <strong>Verdict Note:</strong> The statement contradicts verified public records. The statistical ML model gave high score to context keywords ('PM', 'India'), but Fact Verification caught the false subject entity.
                     </div>
                 </div>
-                """, unsafe_allow_html=True)
-                
+                """
+            elif fact_result["status"] == "SUPPORTED":
+                final_verdict = "REAL"
+                card_html = f"""
+                <div class="card-real">
+                    ✅ PREDICTION: REAL NEWS (Factually Supported)
+                    <div style="font-size: 1.05rem; font-weight: normal; margin-top: 8px;">
+                        <strong>Confidence:</strong> {confidence_real:.2f}% (Supported by trusted reference data and ML analysis)
+                    </div>
+                </div>
+                """
+            else:
+                # NOT_VERIFIED: Rely on Statistical ML Classifier with transparency
+                if ml_pred == 1:
+                    final_verdict = "REAL"
+                    card_html = f"""
+                    <div class="card-real">
+                        ✅ PREDICTION: REAL NEWS
+                        <div style="font-size: 1.05rem; font-weight: normal; margin-top: 8px;">
+                            <strong>ML Confidence Score:</strong> {confidence_real:.2f}% probability of being Authentic/Real News
+                        </div>
+                    </div>
+                    """
+                else:
+                    final_verdict = "FAKE"
+                    card_html = f"""
+                    <div class="card-fake">
+                        ❌ PREDICTION: FAKE NEWS
+                        <div style="font-size: 1.05rem; font-weight: normal; margin-top: 8px;">
+                            <strong>ML Confidence Score:</strong> {confidence_fake:.2f}% probability of being Misleading/Fake News
+                        </div>
+                    </div>
+                    """
+            
+            st.markdown(card_html, unsafe_allow_html=True)
+            
+            # Step 6: Detailed Fact Verification Section
             st.write("")
+            st.subheader("🛡️ Fact Verification Analysis (Trusted Reference Data)")
+            
+            fact_status = fact_result["status"]
+            if fact_status == "SUPPORTED":
+                status_class = "fact-supported"
+                badge_bg = "#10B981"
+                status_text = "🟢 SUPPORTED"
+            elif fact_status == "CONTRADICTED":
+                status_class = "fact-contradicted"
+                badge_bg = "#EF4444"
+                status_text = "🔴 CONTRADICTED"
+            else:
+                status_class = "fact-unverified"
+                badge_bg = "#6B7280"
+                status_text = "⚪ NOT VERIFIED"
+                
+            st.markdown(f"""
+            <div class="fact-card {status_class}">
+                <div class="badge-label" style="background-color: {badge_bg}; color: white;">
+                    {status_text}
+                </div>
+                <div style="font-size: 1.1rem; font-weight: bold; margin-bottom: 6px;">
+                    {fact_result['title']}
+                </div>
+                <div style="margin-bottom: 8px;">
+                    <strong>Verification Details:</strong> {fact_result['reason']}
+                </div>
+                <div style="font-size: 0.92rem;">
+                    <strong>Trusted Source:</strong> {fact_result['source']}
+                </div>
+                <div style="font-size: 0.88rem; margin-top: 6px; opacity: 0.85;">
+                    <em>Scope & Limitations:</em> {fact_result['limitations']}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            # Step 7: Statistical ML Confidence Breakdown
+            st.write("")
+            st.subheader("📊 Statistical Model Probability Breakdown (TF-IDF + Logistic Regression)")
             res_c1, res_c2 = st.columns(2)
             with res_c1:
                 st.metric(label="Real News Probability", value=f"{confidence_real:.2f}%")
@@ -207,6 +308,7 @@ if predict_clicked:
                 st.write("**NLTK Cleaned & Stemmed Tokens:**", cleaned if cleaned else "[No valid tokens]")
                 matched_features = [vectorizer.get_feature_names_out()[idx] for idx in vectorized.nonzero()[1]]
                 st.write(f"**Matched TF-IDF Vocabulary ({len(matched_features)} keywords):**", ", ".join(matched_features) if matched_features else "None")
+                st.caption("Notice: TF-IDF only tracks vocabulary presence. If a false name is used with credible words like 'PM' and 'India', the Statistical model alone sees high credibility, which is why Fact Verification is necessary.")
 
 # Visual Graphs Section
 st.divider()
