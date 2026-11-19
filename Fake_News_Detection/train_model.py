@@ -1,18 +1,16 @@
 import os
 import json
+import pickle
+import pandas as pd
+import numpy as np
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-# Set writable matplotlib config dir inside workspace to prevent sandbox access errors
 os.environ['MPLCONFIGDIR'] = os.path.join(BASE_DIR, ".matplotlib")
 os.makedirs(os.environ['MPLCONFIGDIR'], exist_ok=True)
 
 import matplotlib
-matplotlib.use('Agg')  # Headless backend
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-
-import pandas as pd
-import numpy as np
-import joblib
 
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
@@ -31,7 +29,9 @@ from preprocess import preprocess_text
 # Paths
 DATASET_DIR = os.path.join(BASE_DIR, "dataset")
 GRAPHS_DIR = os.path.join(BASE_DIR, "graphs")
-DATASET_PATH = os.path.join(DATASET_DIR, "news.csv")
+MAIN_DATASET_PATH = os.path.join(DATASET_DIR, "news.csv")
+SHORT_DATASET_PATH = os.path.join(DATASET_DIR, "short_news.csv")
+
 MODEL_PATH = os.path.join(BASE_DIR, "model.pkl")
 VECTORIZER_PATH = os.path.join(BASE_DIR, "vectorizer.pkl")
 METRICS_PATH = os.path.join(BASE_DIR, "metrics.json")
@@ -39,74 +39,61 @@ METRICS_PATH = os.path.join(BASE_DIR, "metrics.json")
 os.makedirs(DATASET_DIR, exist_ok=True)
 os.makedirs(GRAPHS_DIR, exist_ok=True)
 
-def load_and_prepare_data():
-    """Loads CSV dataset and cleans labels."""
-    print("[INFO] Loading dataset with Pandas...")
+def load_and_combine_data():
+    """
+    Loads both long news articles and short news examples,
+    combining them into a balanced dataset for high accuracy on both short and long inputs.
+    """
+    print("[INFO] Loading datasets...")
     
-    filepath = DATASET_PATH
-    if not os.path.exists(filepath):
-        candidates = [os.path.join(DATASET_DIR, f) for f in os.listdir(DATASET_DIR) if f.endswith('.csv')]
-        if candidates:
-            filepath = candidates[0]
-        else:
-            raise FileNotFoundError(f"No CSV dataset found in {DATASET_DIR}")
-            
-    try:
-        df = pd.read_csv(filepath, sep=';', on_bad_lines='skip')
-        if 'label' not in [c.lower() for c in df.columns] and len(df.columns) == 1:
-            df = pd.read_csv(filepath, sep=',', on_bad_lines='skip')
-    except Exception:
-        df = pd.read_csv(filepath, sep=',', on_bad_lines='skip')
-
-    print(f"Dataset Raw Shape: {df.shape}")
-
-    col_mapping = {}
-    for col in df.columns:
-        c_low = col.lower().strip()
-        if 'title' in c_low and 'title' not in col_mapping.values():
-            col_mapping[col] = 'title'
-        elif ('text' in c_low or 'body' in c_low or 'article' in c_low) and 'text' not in col_mapping.values():
-            col_mapping[col] = 'text'
-        elif ('label' in c_low or 'target' in c_low or 'class' in c_low) and 'label' not in col_mapping.values():
-            col_mapping[col] = 'label'
-            
-    df = df.rename(columns=col_mapping)
-
-    if 'text' not in df.columns and 'title' in df.columns:
-        df['text'] = df['title']
-    elif 'title' not in df.columns and 'text' in df.columns:
-        df['title'] = ''
-
-    df['title'] = df['title'].fillna('')
-    df['text'] = df['text'].fillna('')
-    df['content'] = df['title'] + " " + df['text']
-
-    df = df[df['content'].str.strip().str.len() > 15].copy()
-
-    # Map target: 1 = FAKE, 0 = REAL
-    def map_label(val):
-        val_str = str(val).strip().upper()
-        if val_str in ['FAKE', 'FALSE', 'MISLEADING', '0', '0.0']:
-            return 1
-        elif val_str in ['REAL', 'TRUE', '1', '1.0']:
-            return 0
-        return None
-
-    df['target'] = df['label'].apply(map_label)
-    df = df.dropna(subset=['target']).copy()
-    df['target'] = df['target'].astype(int)
-
-    # For fast and robust college demo, take balanced subset of 4,000 articles if dataset is large
-    if len(df) > 4000:
-        real_df = df[df['target'] == 0].sample(2000, random_state=42)
-        fake_df = df[df['target'] == 1].sample(2000, random_state=42)
-        df = pd.concat([real_df, fake_df]).sample(frac=1, random_state=42).reset_index(drop=True)
-
-    real_count = int((df['target'] == 0).sum())
-    fake_count = int((df['target'] == 1).sum())
-    print(f"[INFO] Labeled Data: Total={len(df)}, REAL (0)={real_count}, FAKE (1)={fake_count}")
-
-    return df
+    # 1. Load long news dataset
+    df_long = pd.read_csv(MAIN_DATASET_PATH, sep=';', on_bad_lines='skip')
+    df_long['title'] = df_long['title'].fillna('')
+    df_long['text'] = df_long['text'].fillna('')
+    df_long['label'] = pd.to_numeric(df_long['label'], errors='coerce')
+    df_long = df_long.dropna(subset=['label'])
+    df_long['label'] = df_long['label'].astype(int)
+    
+    # Create full content
+    df_long['content'] = df_long['title'] + " " + df_long['text']
+    df_long = df_long[df_long['content'].str.strip().str.len() > 15].copy()
+    
+    # Also extract short headlines from long articles as short news training data
+    df_headlines = df_long[['title', 'label']].copy()
+    df_headlines['content'] = df_headlines['title']
+    df_headlines = df_headlines[df_headlines['content'].str.strip().str.len() > 10].copy()
+    
+    # 2. Load curated short news dataset (220+ examples of short facts, headlines, WhatsApp forwards)
+    df_short = pd.read_csv(SHORT_DATASET_PATH, sep=';', on_bad_lines='skip')
+    df_short['title'] = df_short['title'].fillna('')
+    df_short['text'] = df_short['text'].fillna('')
+    df_short['label'] = pd.to_numeric(df_short['label'], errors='coerce')
+    df_short = df_short.dropna(subset=['label'])
+    df_short['label'] = df_short['label'].astype(int)
+    df_short['content'] = df_short['title']
+    
+    # Weight short news samples by repeating them so they aren't drowned out by long articles
+    short_repeated = pd.concat([df_short] * 12, ignore_index=True)
+    
+    print(f"Long news samples    : {len(df_long)}")
+    print(f"Headline samples     : {len(df_headlines)}")
+    print(f"Short news samples   : {len(df_short)} (repeated 12x -> {len(short_repeated)})")
+    
+    # Combine all datasets
+    combined_df = pd.concat([
+        df_long[['content', 'label']],
+        df_headlines[['content', 'label']],
+        short_repeated[['content', 'label']]
+    ], ignore_index=True)
+    
+    # Shuffle dataset
+    combined_df = combined_df.sample(frac=1.0, random_state=42).reset_index(drop=True)
+    
+    real_count = int((combined_df['label'] == 1).sum())
+    fake_count = int((combined_df['label'] == 0).sum())
+    print(f"[INFO] Total Combined Samples: {len(combined_df)} (REAL=1: {real_count}, FAKE=0: {fake_count})")
+    
+    return combined_df
 
 def generate_visualizations(df, y_test, y_pred, model, vectorizer):
     """Generates and saves publication/presentation quality Matplotlib graphs."""
@@ -114,19 +101,19 @@ def generate_visualizations(df, y_test, y_pred, model, vectorizer):
     
     # 1. Class Distribution Graph
     plt.figure(figsize=(7, 5))
-    counts = df['target'].value_counts()
-    labels = ['Real News (0)', 'Fake News (1)']
+    counts = df['label'].value_counts()
+    labels = ['Fake News (0)', 'Real News (1)']
     values = [counts.get(0, 0), counts.get(1, 0)]
-    colors = ['#28a745', '#dc3545']
+    colors = ['#dc3545', '#28a745']
     
     bars = plt.bar(labels, values, color=colors, edgecolor='black', width=0.55)
-    plt.title("Dataset Class Distribution (Real vs Fake)", fontsize=14, fontweight='bold', pad=15)
-    plt.ylabel("Number of Articles", fontsize=12)
+    plt.title("Dataset Class Distribution (Short + Long News)", fontsize=14, fontweight='bold', pad=15)
+    plt.ylabel("Number of Articles / Samples", fontsize=12)
     plt.grid(axis='y', linestyle='--', alpha=0.7)
     
     for bar in bars:
         height = bar.get_height()
-        plt.text(bar.get_x() + bar.get_width() / 2.0, height + 15,
+        plt.text(bar.get_x() + bar.get_width() / 2.0, height + 20,
                  f"{height:,}", ha='center', va='bottom', fontsize=11, fontweight='bold')
                  
     plt.tight_layout()
@@ -143,8 +130,8 @@ def generate_visualizations(df, y_test, y_pred, model, vectorizer):
     plt.colorbar()
     
     tick_marks = np.arange(2)
-    plt.xticks(tick_marks, ['Real (0)', 'Fake (1)'], fontsize=11)
-    plt.yticks(tick_marks, ['Real (0)', 'Fake (1)'], fontsize=11)
+    plt.xticks(tick_marks, ['Fake (0)', 'Real (1)'], fontsize=11)
+    plt.yticks(tick_marks, ['Fake (0)', 'Real (1)'], fontsize=11)
     
     thresh = cm.max() / 2.0
     for i in range(cm.shape[0]):
@@ -169,21 +156,21 @@ def generate_visualizations(df, y_test, y_pred, model, vectorizer):
     feature_names = np.array(vectorizer.get_feature_names_out())
     coef = model.coef_[0]
     
-    top_fake_idx = np.argsort(coef)[-10:]
-    top_real_idx = np.argsort(coef)[:10]
+    top_real_idx = np.argsort(coef)[-10:]
+    top_fake_idx = np.argsort(coef)[:10]
     
     fig, axes = plt.subplots(1, 2, figsize=(13, 6))
     
-    # Top Real Words (Negative Coefs)
-    axes[0].barh(feature_names[top_real_idx], np.abs(coef[top_real_idx]), color='#28a745', edgecolor='black')
-    axes[0].set_title("Top Words Indicating REAL News", fontsize=12, fontweight='bold')
+    # Top Fake Words (Negative Coefs for class 1)
+    axes[0].barh(feature_names[top_fake_idx], np.abs(coef[top_fake_idx]), color='#dc3545', edgecolor='black')
+    axes[0].set_title("Top Words Indicating FAKE News", fontsize=12, fontweight='bold')
     axes[0].set_xlabel("Predictive Weight", fontsize=10)
     axes[0].invert_yaxis()
     axes[0].grid(axis='x', linestyle='--', alpha=0.6)
     
-    # Top Fake Words (Positive Coefs)
-    axes[1].barh(feature_names[top_fake_idx], coef[top_fake_idx], color='#dc3545', edgecolor='black')
-    axes[1].set_title("Top Words Indicating FAKE News", fontsize=12, fontweight='bold')
+    # Top Real Words (Positive Coefs for class 1)
+    axes[1].barh(feature_names[top_real_idx], coef[top_real_idx], color='#28a745', edgecolor='black')
+    axes[1].set_title("Top Words Indicating REAL News", fontsize=12, fontweight='bold')
     axes[1].set_xlabel("Predictive Weight", fontsize=10)
     axes[1].invert_yaxis()
     axes[1].grid(axis='x', linestyle='--', alpha=0.6)
@@ -197,41 +184,52 @@ def generate_visualizations(df, y_test, y_pred, model, vectorizer):
 
 def train():
     """Full ML pipeline: Load -> Preprocess -> TF-IDF -> Train -> Evaluate -> Save."""
-    df = load_and_prepare_data()
+    df = load_and_combine_data()
 
     print("[INFO] Preprocessing text using NLTK (lowercasing, cleaning, stopwords, stemming)...")
     df['cleaned_content'] = df['content'].apply(preprocess_text)
     df = df[df['cleaned_content'].str.strip() != ''].copy()
 
     X = df['cleaned_content']
-    y = df['target']
+    y = df['label']
 
     print(f"[INFO] Splitting dataset: 80% Training, 20% Testing (Stratified)...")
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.20, random_state=42, stratify=y
     )
 
-    print("[INFO] Extracting TF-IDF features (max_features=5000, n-grams=(1,2))...")
-    vectorizer = TfidfVectorizer(max_features=5000, ngram_range=(1, 2))
+    print("[INFO] Extracting TF-IDF features (min_df=1, ngram_range=(1,2), sublinear_tf=True)...")
+    vectorizer = TfidfVectorizer(
+        max_features=50000,
+        ngram_range=(1, 2),
+        min_df=1,
+        max_df=0.95,
+        sublinear_tf=True
+    )
     X_train_tfidf = vectorizer.fit_transform(X_train)
     X_test_tfidf = vectorizer.transform(X_test)
 
     print("[INFO] Training Scikit-learn Logistic Regression model...")
-    model = LogisticRegression(max_iter=1000, C=1.0, solver='lbfgs', random_state=42)
+    model = LogisticRegression(
+        C=2.5,
+        max_iter=1000,
+        class_weight="balanced",
+        random_state=42
+    )
     model.fit(X_train_tfidf, y_train)
 
     print("[INFO] Evaluating model on unseen test set...")
     y_pred = model.predict(X_test_tfidf)
 
     acc = accuracy_score(y_test, y_pred)
-    prec = precision_score(y_test, y_pred)
-    rec = recall_score(y_test, y_pred)
-    f1 = f1_score(y_test, y_pred)
+    prec = precision_score(y_test, y_pred, zero_division=0)
+    rec = recall_score(y_test, y_pred, zero_division=0)
+    f1 = f1_score(y_test, y_pred, zero_division=0)
     cm = confusion_matrix(y_test, y_pred)
-    report = classification_report(y_test, y_pred, target_names=['Real (0)', 'Fake (1)'])
+    report = classification_report(y_test, y_pred, target_names=['Fake (0)', 'Real (1)'], zero_division=0)
 
     print("=" * 60)
-    print("🏆 MODEL EVALUATION RESULTS:")
+    print("MODEL EVALUATION RESULTS (Short + Long News):")
     print(f"Accuracy : {acc * 100:.2f}%")
     print(f"Precision: {prec * 100:.2f}%")
     print(f"Recall   : {rec * 100:.2f}%")
@@ -242,14 +240,25 @@ def train():
     print(report)
     print("=" * 60)
 
-    # Save model and vectorizer with Joblib
+    # Save model and vectorizer with Pickle/Joblib
     print(f"[INFO] Saving model to {MODEL_PATH}...")
-    joblib.dump(model, MODEL_PATH)
+    with open(MODEL_PATH, "wb") as f:
+        pickle.dump(model, f)
+
+    # Also save as fake_news_model.pkl for compatibility with user's alternate name
+    alt_model_path = os.path.join(BASE_DIR, "fake_news_model.pkl")
+    with open(alt_model_path, "wb") as f:
+        pickle.dump(model, f)
 
     print(f"[INFO] Saving vectorizer to {VECTORIZER_PATH}...")
-    joblib.dump(vectorizer, VECTORIZER_PATH)
+    with open(VECTORIZER_PATH, "wb") as f:
+        pickle.dump(vectorizer, f)
 
-    # Save metrics to JSON for instant Streamlit display
+    alt_vec_path = os.path.join(BASE_DIR, "tfidf_vectorizer.pkl")
+    with open(alt_vec_path, "wb") as f:
+        pickle.dump(vectorizer, f)
+
+    # Save metrics to JSON for Streamlit display
     metrics = {
         "accuracy": round(float(acc) * 100, 2),
         "precision": round(float(prec) * 100, 2),
@@ -258,8 +267,8 @@ def train():
         "total_samples": int(len(df)),
         "train_samples": int(len(X_train)),
         "test_samples": int(len(X_test)),
-        "real_count": int((y == 0).sum()),
-        "fake_count": int((y == 1).sum()),
+        "real_count": int((y == 1).sum()),
+        "fake_count": int((y == 0).sum()),
         "confusion_matrix": cm.tolist()
     }
     with open(METRICS_PATH, "w") as f:

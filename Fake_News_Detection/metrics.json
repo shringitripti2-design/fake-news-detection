@@ -1,21 +1,21 @@
 {
-    "accuracy": 95.38,
-    "precision": 95.72,
-    "recall": 95.0,
-    "f1_score": 95.36,
-    "total_samples": 4000,
-    "train_samples": 3200,
-    "test_samples": 800,
-    "real_count": 2000,
-    "fake_count": 2000,
+    "accuracy": 95.51,
+    "precision": 95.29,
+    "recall": 96.33,
+    "f1_score": 95.81,
+    "total_samples": 18925,
+    "train_samples": 15140,
+    "test_samples": 3785,
+    "real_count": 10092,
+    "fake_count": 8833,
     "confusion_matrix": [
         [
-            383,
-            17
+            1671,
+            96
         ],
         [
-            20,
-            380
+            74,
+            1944
         ]
     ]
 }
