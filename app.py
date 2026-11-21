@@ -3,6 +3,8 @@ import json
 import pickle
 import streamlit as st
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 from preprocess import preprocess_text
 from fact_verifier import verify_fact
 
@@ -86,6 +88,19 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
+# Helper to find file across BASE_DIR and working directory
+def find_file(relative_path):
+    candidates = [
+        relative_path,
+        os.path.join(BASE_DIR, relative_path),
+        os.path.join(BASE_DIR, "..", relative_path),
+        os.path.join(BASE_DIR, "Fake_News_Detection", relative_path)
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    return None
+
 # Load Model & Vectorizer
 @st.cache_resource
 def load_assets():
@@ -93,16 +108,18 @@ def load_assets():
     vectorizer = None
     
     # Try model paths
-    for m_path in ["model.pkl", "fake_news_model.pkl"]:
-        if os.path.exists(m_path):
-            with open(m_path, "rb") as f:
+    for m_name in ["model.pkl", "fake_news_model.pkl"]:
+        p = find_file(m_name)
+        if p and os.path.exists(p):
+            with open(p, "rb") as f:
                 model = pickle.load(f)
             break
             
     # Try vectorizer paths
-    for v_path in ["vectorizer.pkl", "tfidf_vectorizer.pkl", "tfidf.pkl"]:
-        if os.path.exists(v_path):
-            with open(v_path, "rb") as f:
+    for v_name in ["vectorizer.pkl", "tfidf_vectorizer.pkl", "tfidf.pkl"]:
+        p = find_file(v_name)
+        if p and os.path.exists(p):
+            with open(p, "rb") as f:
                 vectorizer = pickle.load(f)
             break
             
@@ -114,13 +131,14 @@ model, vectorizer = load_assets()
 with st.sidebar:
     st.title("📰 Project Info")
     st.markdown("**Fake News Detection & Fact Verification System**")
-    st.write("Hybrid Machine Learning (TF-IDF + Logistic Regression) & Knowledge-Based Fact Verification.")
+    st.write("Hybrid Machine Learning (TF-IDF + Logistic Regression) & Dynamic Evidence Verification.")
     st.divider()
     
     st.subheader("📊 Model Performance")
-    if os.path.exists("metrics.json"):
+    metrics_file = find_file("metrics.json")
+    if metrics_file:
         try:
-            with open("metrics.json", "r") as f:
+            with open(metrics_file, "r") as f:
                 metrics = json.load(f)
             st.metric("Model Accuracy", f"{metrics.get('accuracy', 95.51)}%")
             st.metric("Precision", f"{metrics.get('precision', 95.29)}%")
@@ -135,12 +153,12 @@ with st.sidebar:
     st.subheader("🛠️ Architecture")
     st.write("1. **Statistical NLP:** TF-IDF (Unigram + Bigram, 50k features)")
     st.write("2. **Classifier:** Logistic Regression (Scikit-learn)")
-    st.write("3. **Fact Verifier:** Trusted Reference Database (Govt. records, PIB Fact Checks, Encyclopedic data)")
+    st.write("3. **Fact Verifier:** Dynamic Public Knowledge Verification (Authoritative Wikipedia API + Real-time Google News RSS)")
     st.write("4. **3-State Verification:** Supported, Contradicted, Not Verified")
 
 # Main Header
 st.markdown('<div class="title-text">📰 FAKE NEWS DETECTION & FACT VERIFICATION</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-text">Hybrid System: Statistical Machine Learning + Trusted Reference Fact Checking</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-text">Hybrid System: Statistical Machine Learning + Dynamic Public Evidence Fact Checking</div>', unsafe_allow_html=True)
 
 # Session State for Input
 if 'news_text' not in st.session_state:
@@ -151,21 +169,21 @@ c1, c2, c3, c4 = st.columns(4)
 
 with c1:
     if st.button("🇮🇳 Sample 1 (Real Fact)", use_container_width=True):
-        st.session_state['news_text'] = "Narendra modi pm h india ke"
+        st.session_state['news_text'] = "Narendra Modi is the Prime Minister of India"
         st.rerun()
 
 with c2:
-    if st.button("⚠️ Sample 2 (False Entity Test)", use_container_width=True):
+    if st.button("⚠️ Sample 2 (False Entity Claim)", use_container_width=True):
         st.session_state['news_text'] = "Tushar is PM of India"
         st.rerun()
 
 with c3:
-    if st.button("📱 Sample 3 (Fake Scheme)", use_container_width=True):
-        st.session_state['news_text'] = "Government is giving free iPhone to everyone click this link"
+    if st.button("📱 Sample 3 (Fake Scam Scheme)", use_container_width=True):
+        st.session_state['news_text'] = "Government is giving free iPhone to everyone"
         st.rerun()
 
 with c4:
-    if st.button("🚀 Sample 4 (Real Space)", use_container_width=True):
+    if st.button("🚀 Sample 4 (Real Space Mission)", use_container_width=True):
         st.session_state['news_text'] = "ISRO launched a new satellite into orbit successfully"
         st.rerun()
 
@@ -187,7 +205,7 @@ if predict_clicked:
     elif model is None or vectorizer is None:
         st.error("❌ Model ya Vectorizer load nahi hua! Please check model.pkl and vectorizer.pkl.")
     else:
-        with st.spinner("Running Statistical NLP Model & Cross-Referencing Trusted Reference Facts..."):
+        with st.spinner("Running Statistical NLP Model & Cross-Referencing Evidence..."):
             # Step 1: Preprocess text using NLTK
             cleaned = preprocess_text(user_news)
             
@@ -200,7 +218,7 @@ if predict_clicked:
             confidence_real = proba[1] * 100
             confidence_fake = proba[0] * 100
             
-            # Step 4: Fact Verification against Trusted Reference Data
+            # Step 4: Dynamic Evidence-Based Fact Verification
             fact_result = verify_fact(user_news)
             
             st.divider()
@@ -214,7 +232,7 @@ if predict_clicked:
                 <div class="card-fake">
                     ❌ PREDICTION: FAKE NEWS (Factual Contradiction Detected)
                     <div style="font-size: 1.05rem; font-weight: normal; margin-top: 8px;">
-                        <strong>Verdict Note:</strong> The statement contradicts verified public records. The statistical ML model gave high score to context keywords ('PM', 'India'), but Fact Verification caught the false subject entity.
+                        <strong>Verdict Note:</strong> The statement contradicts verified public records. The statistical ML model evaluated context keywords, but evidence verification identified the contradiction.
                     </div>
                 </div>
                 """
@@ -224,7 +242,7 @@ if predict_clicked:
                 <div class="card-real">
                     ✅ PREDICTION: REAL NEWS (Factually Supported)
                     <div style="font-size: 1.05rem; font-weight: normal; margin-top: 8px;">
-                        <strong>Confidence:</strong> {confidence_real:.2f}% (Supported by trusted reference data and ML analysis)
+                        <strong>Confidence:</strong> {confidence_real:.2f}% (Corroborated by authoritative reference data and statistical NLP analysis)
                     </div>
                 </div>
                 """
@@ -255,7 +273,7 @@ if predict_clicked:
             
             # Step 6: Detailed Fact Verification Section
             st.write("")
-            st.subheader("🛡️ Fact Verification Analysis (Trusted Reference Data)")
+            st.subheader("🛡️ Fact Verification Analysis (Authoritative Public Evidence)")
             
             fact_status = fact_result["status"]
             if fact_status == "SUPPORTED":
@@ -271,6 +289,12 @@ if predict_clicked:
                 badge_bg = "#6B7280"
                 status_text = "⚪ NOT VERIFIED"
                 
+            source_url = fact_result.get("source_url", "")
+            if source_url:
+                source_html = f'<a href="{source_url}" target="_blank" style="color: #1D4ED8; text-decoration: underline; font-weight: 600;">{fact_result["source"]} ↗</a>'
+            else:
+                source_html = f'<span>{fact_result["source"]}</span>'
+
             st.markdown(f"""
             <div class="fact-card {status_class}">
                 <div class="badge-label" style="background-color: {badge_bg}; color: white;">
@@ -283,10 +307,10 @@ if predict_clicked:
                     <strong>Verification Details:</strong> {fact_result['reason']}
                 </div>
                 <div style="font-size: 0.92rem;">
-                    <strong>Trusted Source:</strong> {fact_result['source']}
+                    <strong>Evidence Source:</strong> {source_html}
                 </div>
                 <div style="font-size: 0.88rem; margin-top: 6px; opacity: 0.85;">
-                    <em>Scope & Limitations:</em> {fact_result['limitations']}
+                    <em>Scope & Methodology:</em> {fact_result.get('limitations', '')}
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -308,21 +332,25 @@ if predict_clicked:
                 st.write("**NLTK Cleaned & Stemmed Tokens:**", cleaned if cleaned else "[No valid tokens]")
                 matched_features = [vectorizer.get_feature_names_out()[idx] for idx in vectorized.nonzero()[1]]
                 st.write(f"**Matched TF-IDF Vocabulary ({len(matched_features)} keywords):**", ", ".join(matched_features) if matched_features else "None")
-                st.caption("Notice: TF-IDF only tracks vocabulary presence. If a false name is used with credible words like 'PM' and 'India', the Statistical model alone sees high credibility, which is why Fact Verification is necessary.")
+                st.caption("Notice: TF-IDF analyzes statistical term frequency and n-gram patterns. For entities and factual claims, dynamic fact verification provides the ground-truth evidence.")
 
 # Visual Graphs Section
 st.divider()
 st.subheader("📈 Model Training Visualizations (College PPT Graphs)")
 g1, g2, g3 = st.columns(3)
 
+dist_img = find_file("graphs/class_distribution.png")
+cm_img = find_file("graphs/confusion_matrix.png")
+kw_img = find_file("graphs/top_keywords.png")
+
 with g1:
-    if os.path.exists("graphs/class_distribution.png"):
-        st.image("graphs/class_distribution.png", caption="Dataset Distribution (Short + Long)", use_container_width=True)
+    if dist_img and os.path.exists(dist_img):
+        st.image(dist_img, caption="Dataset Distribution (Short + Long)", use_container_width=True)
 
 with g2:
-    if os.path.exists("graphs/confusion_matrix.png"):
-        st.image("graphs/confusion_matrix.png", caption="Confusion Matrix Heatmap", use_container_width=True)
+    if cm_img and os.path.exists(cm_img):
+        st.image(cm_img, caption="Confusion Matrix Heatmap", use_container_width=True)
 
 with g3:
-    if os.path.exists("graphs/top_keywords.png"):
-        st.image("graphs/top_keywords.png", caption="Top Predictive Keywords (Real vs Fake)", use_container_width=True)
+    if kw_img and os.path.exists(kw_img):
+        st.image(kw_img, caption="Top Predictive Keywords (Real vs Fake)", use_container_width=True)
